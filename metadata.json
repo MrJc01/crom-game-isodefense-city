@@ -1,0 +1,5 @@
+{
+  "name": "IsoDefense City",
+  "description": "A high-performance isometric city builder and tower defense game engine using Phaser 3 and React.",
+  "requestFramePermissions": []
+}
