@@ -105,6 +105,9 @@ export class Tower extends Building {
 
     mainScene.audioManager.playSFX(sfxKey, { volume: 0.6 });
 
+    // VFX: Muzzle Flash
+    mainScene.particleManager.playEffect('MUZZLE', this.x, this.y - 50);
+
     new Projectile(
         this.scene, 
         this.x, 

@@ -7,6 +7,7 @@ import { PathfindingManager } from '../systems/PathfindingManager';
 import { GameManager } from '../systems/GameManager';
 import { WaveManager } from '../systems/WaveManager';
 import { AudioManager } from '../systems/AudioManager';
+import { ParticleManager } from '../systems/ParticleManager';
 import { Enemy } from '../objects/Enemy';
 import { IsoUtils } from '../utils/IsoUtils';
 import { MAP_SIZE, COLOR_BACKGROUND } from '../../constants';
@@ -30,6 +31,7 @@ export class MainScene extends Phaser.Scene {
   public gameManager!: GameManager;
   public waveManager!: WaveManager;
   public audioManager!: AudioManager;
+  public particleManager!: ParticleManager;
 
   // Track enemies
   private enemies: Enemy[] = [];
@@ -45,6 +47,7 @@ export class MainScene extends Phaser.Scene {
     this.gameManager = new GameManager(); // Economy Logic
     this.audioManager = new AudioManager(this);
     this.gridManager = new GridManager(this);
+    this.particleManager = new ParticleManager(this); // Initialize Particles
     this.buildingManager = new BuildingManager(this, this.gridManager);
     this.cameraManager = new CameraManager(this);
     this.pathfindingManager = new PathfindingManager(this, this.buildingManager);

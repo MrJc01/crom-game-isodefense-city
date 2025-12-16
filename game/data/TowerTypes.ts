@@ -14,6 +14,10 @@ export interface ITowerConfig {
   blastRadius?: number; // Only required if isAoE is true
   tint: number; // To differentiate visuals without unique sprites
   effect?: IStatusEffect; // Optional status effect payload
+  
+  // UI Fields
+  description: string;
+  dpsEstimate: string;
 }
 
 export const TOWER_TYPES: Record<string, ITowerConfig> = {
@@ -27,7 +31,9 @@ export const TOWER_TYPES: Record<string, ITowerConfig> = {
     projectileSpeed: 400,
     projectileColor: 0xfacc15, // Yellow
     isAoE: false,
-    tint: 0x3b82f6 // Blue
+    tint: 0x3b82f6, // Blue
+    description: "Reliable kinetic damage. High accuracy against single targets.",
+    dpsEstimate: "DPS: 19"
   },
   CANNON: {
     key: 'CANNON',
@@ -40,7 +46,9 @@ export const TOWER_TYPES: Record<string, ITowerConfig> = {
     projectileColor: 0x1e293b, // Dark Slate (Cannonball)
     isAoE: true,
     blastRadius: 80,
-    tint: 0xef4444 // Red
+    tint: 0xef4444, // Red
+    description: "Heavy ordnance. Deals splash damage to clustered hostiles.",
+    dpsEstimate: "DPS: 20 (AoE)"
   },
   SNIPER: {
     key: 'SNIPER',
@@ -52,7 +60,9 @@ export const TOWER_TYPES: Record<string, ITowerConfig> = {
     projectileSpeed: 1200, // Very fast
     projectileColor: 0xffffff, // White tracer
     isAoE: false,
-    tint: 0x10b981 // Emerald
+    tint: 0x10b981, // Emerald
+    description: "High-caliber precision rifle. Eliminates high-value targets from afar.",
+    dpsEstimate: "DPS: 33"
   },
   ICE: {
     key: 'ICE',
@@ -69,6 +79,8 @@ export const TOWER_TYPES: Record<string, ITowerConfig> = {
       type: 'SLOW',
       duration: 2000,
       value: 0.5 // 50% speed
-    }
+    },
+    description: "Cryogenic emitter. Slows enemy movement speed by 50%.",
+    dpsEstimate: "Support"
   }
 };

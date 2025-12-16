@@ -18,6 +18,7 @@ export class WaveManager extends Phaser.Events.EventEmitter {
   private currentWaveIndex: number = -1;
   private enemiesLeftToSpawn: number = 0;
   private activeEnemyCount: number = 0;
+  private currentBuildDuration: number = 0;
 
   // Timers
   private buildTimerEvent?: Phaser.Time.TimerEvent;
@@ -39,17 +40,19 @@ export class WaveManager extends Phaser.Events.EventEmitter {
 
   private startBuildPhase(durationSeconds: number) {
     this.currentPhase = 'BUILDING';
+    this.currentBuildDuration = durationSeconds;
     this.emit('phase-change', 'BUILDING');
     
     let timeLeft = durationSeconds;
-    this.emit('wave-timer', timeLeft);
+    // Emit initial time state (full bar)
+    this.emit('wave-timer', timeLeft, this.currentBuildDuration);
 
     // Countdown Timer
     this.buildTimerEvent = this.scene.time.addEvent({
       delay: 1000,
       callback: () => {
         timeLeft--;
-        this.emit('wave-timer', timeLeft);
+        this.emit('wave-timer', timeLeft, this.currentBuildDuration);
         if (timeLeft <= 0) {
           this.startNextWave();
         }

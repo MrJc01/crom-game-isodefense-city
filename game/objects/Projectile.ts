@@ -101,26 +101,20 @@ export class Projectile extends Phaser.GameObjects.Container {
                 this.target.applyEffect(this.effect);
             }
         }
+        
+        // VFX: Hit Impact or Ice
+        if (this.effect && this.effect.type === 'SLOW') {
+             this.scene.particleManager.playEffect('ICE', this.x, this.y);
+        } else {
+             this.scene.particleManager.playEffect('HIT', this.x, this.y);
+        }
     }
     this.destroyProjectile();
   }
 
   private explode() {
-    // 1. Visual Effect
-    const explosion = this.scene.add.graphics();
-    explosion.fillStyle(0xf97316, 0.6); // Orange-500 transparency
-    explosion.fillCircle(0, 0, this.blastRadius);
-    explosion.setPosition(this.x, this.y);
-    explosion.setDepth(this.y + 100); // On top of stuff
-
-    // Tween the explosion out
-    this.scene.tweens.add({
-        targets: explosion,
-        scale: { from: 0.5, to: 1.2 },
-        alpha: { from: 0.6, to: 0 },
-        duration: 300,
-        onComplete: () => explosion.destroy()
-    });
+    // 1. Particle Effect
+    this.scene.particleManager.playEffect('EXPLOSION', this.x, this.y);
 
     // 2. Logic: Find enemies in range
     const enemies = this.scene.getEnemies();

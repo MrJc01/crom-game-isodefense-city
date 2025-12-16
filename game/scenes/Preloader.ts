@@ -6,6 +6,7 @@ export class Preloader extends Phaser.Scene {
   declare add: Phaser.GameObjects.GameObjectFactory;
   declare scene: Phaser.Scenes.ScenePlugin;
   declare cameras: Phaser.Cameras.Scene2D.CameraManager;
+  declare make: Phaser.GameObjects.GameObjectCreator;
 
   constructor() {
     super('Preloader');
@@ -43,7 +44,30 @@ export class Preloader extends Phaser.Scene {
   }
 
   create() {
+    // Generate Particle Textures (Procedural)
+    this.generateParticleTextures();
+
     this.scene.start('MainMenuScene');
+  }
+
+  private generateParticleTextures() {
+    // 1. Flare (Soft circle)
+    const flareGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+    flareGraphics.fillStyle(0xffffff, 1);
+    flareGraphics.fillCircle(16, 16, 16);
+    flareGraphics.generateTexture('particle_flare', 32, 32);
+
+    // 2. Smoke (Solid circle)
+    const smokeGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+    smokeGraphics.fillStyle(0xffffff, 1);
+    smokeGraphics.fillCircle(16, 16, 16);
+    smokeGraphics.generateTexture('particle_smoke', 32, 32);
+
+    // 3. Spark (Small Rectangle/Line)
+    const sparkGraphics = this.make.graphics({ x: 0, y: 0, add: false });
+    sparkGraphics.fillStyle(0xffffff, 1);
+    sparkGraphics.fillRect(0, 0, 8, 4); // Horizontal dash
+    sparkGraphics.generateTexture('particle_spark', 8, 4);
   }
 
   private createLoadingBar() {

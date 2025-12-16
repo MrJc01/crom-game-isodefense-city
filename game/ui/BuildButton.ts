@@ -22,6 +22,10 @@ export class BuildButton extends Phaser.GameObjects.Container {
   public key: string;
   public cost: number;
 
+  // Interaction Callbacks
+  private onHoverCallback?: () => void;
+  private onOutCallback?: () => void;
+
   constructor(
     scene: Phaser.Scene, 
     x: number, 
@@ -85,14 +89,21 @@ export class BuildButton extends Phaser.GameObjects.Container {
       this.on('pointerdown', callback);
   }
 
+  public setHoverCallbacks(onHover: () => void, onOut: () => void) {
+      this.onHoverCallback = onHover;
+      this.onOutCallback = onOut;
+  }
+
   private onHover() {
       if (!this.isSelected) {
           this.setScale(1.05);
       }
+      if (this.onHoverCallback) this.onHoverCallback();
   }
 
   private onOut() {
       this.setScale(1.0);
+      if (this.onOutCallback) this.onOutCallback();
   }
 
   private draw() {

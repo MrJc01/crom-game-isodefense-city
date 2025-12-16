@@ -122,6 +122,11 @@ export class BuildingManager {
     
     // Play SFX
     this.scene.audioManager.playSFX('sfx_build_place', { volume: 0.8 });
+
+    // VFX: Build Dust
+    if (this.scene.particleManager) {
+        this.scene.particleManager.playEffect('BUILD', pos.x, pos.y);
+    }
     
     return true;
   }
