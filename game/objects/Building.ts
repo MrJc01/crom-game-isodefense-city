@@ -8,6 +8,7 @@ export class Building extends Phaser.GameObjects.Container {
   declare add: (child: Phaser.GameObjects.GameObject | Phaser.GameObjects.GameObject[]) => this;
   declare setDepth: (value: number) => this;
   declare removeAll: (destroyChildren?: boolean) => this;
+  declare setScale: (x: number, y?: number) => this;
 
   protected sprite: Phaser.GameObjects.Sprite;
 

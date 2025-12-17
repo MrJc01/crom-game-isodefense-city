@@ -63,14 +63,24 @@ export class MainScene extends Phaser.Scene {
     const centerPoint = IsoUtils.gridToScreen(MAP_SIZE / 2, MAP_SIZE / 2);
     this.cameras.main.centerOn(centerPoint.x, centerPoint.y);
 
-    // 3. Input Handling (Building Placement)
+    // 3. Input Handling (Building Placement & Selection)
     this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        // Handle Left Click
         if (pointer.leftButtonReleased()) {
             const wasDragging = this.cameraManager.isDragging(pointer);
             if (!this.cameraManager.isPanning && !wasDragging) {
                 this.handleInput(pointer);
             }
         }
+        // Handle Right Click (Deselect)
+        else if (pointer.rightButtonReleased()) {
+            this.buildingManager.deselectTower();
+        }
+    });
+
+    // Listen for Sell Request from UI
+    this.events.on('request-sell-tower', () => {
+        this.buildingManager.sellSelectedTower();
     });
 
     // 4. Start the Level
@@ -115,7 +125,9 @@ export class MainScene extends Phaser.Scene {
   private handleInput(pointer: Phaser.Input.Pointer) {
     const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const gridPos = this.gridManager.isoToCartesian(worldPoint.x, worldPoint.y);
-    this.buildingManager.placeBuilding(gridPos.x, gridPos.y);
+    
+    // Use the combined interaction method (Select OR Build)
+    this.buildingManager.handleInteractAt(gridPos.x, gridPos.y);
   }
 
   /**

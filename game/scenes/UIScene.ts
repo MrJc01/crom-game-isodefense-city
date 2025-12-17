@@ -5,6 +5,8 @@ import { GAME_WIDTH, GAME_HEIGHT } from '../../constants';
 import { TOWER_TYPES } from '../data/TowerTypes';
 import { BuildButton } from '../ui/BuildButton';
 import { Tooltip } from '../ui/Tooltip';
+import { InspectorPanel } from '../ui/InspectorPanel';
+import { Tower } from '../objects/Tower';
 
 export class UIScene extends Phaser.Scene {
   declare add: Phaser.GameObjects.GameObjectFactory;
@@ -25,6 +27,7 @@ export class UIScene extends Phaser.Scene {
   
   // Components
   private tooltip!: Tooltip;
+  private inspector!: InspectorPanel;
   private buttons: BuildButton[] = [];
 
   // Timer Animation State
@@ -50,6 +53,10 @@ export class UIScene extends Phaser.Scene {
         this.mainScene.waveManager.on('phase-change', this.onPhaseChange, this);
         this.mainScene.waveManager.on('game-victory', this.onVictory, this);
     }
+    
+    // Tower Selection Events
+    this.mainScene.events.on('tower-selected', this.onTowerSelected, this);
+    this.mainScene.events.on('tower-deselected', this.onTowerDeselected, this);
 
     // -- UI Construction --
     this.createTopDashboard();
@@ -58,6 +65,10 @@ export class UIScene extends Phaser.Scene {
     // Create Tooltip Layer (always on top)
     this.tooltip = new Tooltip(this);
     this.add.existing(this.tooltip);
+
+    // Create Inspector Panel
+    this.inspector = new InspectorPanel(this, this.mainScene.gameManager);
+    this.add.existing(this.inspector);
 
     // Initial update
     const stats = this.mainScene.gameManager.getStats();
@@ -243,6 +254,14 @@ export class UIScene extends Phaser.Scene {
       });
 
       this.mainScene.audioManager.playSFX('sfx_ui_click', { volume: 0.5 });
+  }
+
+  private onTowerSelected(tower: Tower) {
+      this.inspector.setTower(tower);
+  }
+
+  private onTowerDeselected() {
+      this.inspector.hide();
   }
 
   private updateStats(stats: { gold: number, lives: number }) {

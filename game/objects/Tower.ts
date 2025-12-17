@@ -11,11 +11,24 @@ export class Tower extends Building {
   private lastFired: number = 0;
   private turretGraphics: Phaser.GameObjects.Graphics;
 
+  // RPG Stats
+  public level: number = 1;
+  public totalInvested: number = 0;
+  public currentDamage: number = 0;
+  public currentRange: number = 0;
+  public currentCooldown: number = 0;
+
   constructor(scene: Phaser.Scene, x: number, y: number, typeKey: string) {
     super(scene, x, y, 'tower_lvl1');
 
     // Load Config
     this.config = TOWER_TYPES[typeKey] || TOWER_TYPES['ARCHER'];
+
+    // Initialize Stats
+    this.totalInvested = this.config.cost;
+    this.currentDamage = this.config.damage;
+    this.currentRange = this.config.range;
+    this.currentCooldown = this.config.cooldown;
 
     // Visual Customization based on type
     this.sprite.setTint(this.config.tint);
@@ -58,7 +71,7 @@ export class Tower extends Building {
   }
 
   update(time: number, delta: number) {
-    if (time > this.lastFired + this.config.cooldown) {
+    if (time > this.lastFired + this.currentCooldown) {
       this.tryFire(time);
     }
   }
@@ -68,7 +81,7 @@ export class Tower extends Building {
     const enemies = mainScene.getEnemies();
 
     let closestEnemy: Enemy | null = null;
-    let closestDist = this.config.range;
+    let closestDist = this.currentRange;
 
     for (const enemy of enemies) {
       if (enemy.active && !enemy.isDead) {
@@ -98,7 +111,6 @@ export class Tower extends Building {
         default: sfxKey = 'sfx_shoot_arrow'; break;
     }
 
-    // Try play sniper sound, if not loaded fallback to arrow (logic handled in AudioManager mainly by file existence, but good to be safe)
     if (this.config.key === 'SNIPER' && !this.scene.cache.audio.exists('sfx_shoot_sniper')) {
         sfxKey = 'sfx_shoot_arrow';
     }
@@ -113,13 +125,53 @@ export class Tower extends Building {
         this.x, 
         this.y - 50, 
         target, 
-        this.config.damage,
+        this.currentDamage,
         this.config.projectileSpeed,
         this.config.projectileColor,
         this.config.isAoE,
         this.config.blastRadius,
         this.config.effect // Pass status effect if exists
     );
+  }
+
+  // --- UPGRADE SYSTEM ---
+
+  public getUpgradeCost(): number {
+      // Formula: Base Cost * 0.5 * Level
+      return Math.floor(this.config.cost * 0.6 * this.level);
+  }
+
+  public getSellValue(): number {
+      return Math.floor(this.totalInvested * 0.7);
+  }
+
+  public upgrade() {
+      const cost = this.getUpgradeCost();
+      this.level++;
+      this.totalInvested += cost;
+
+      // Improve Stats
+      this.currentDamage = Math.floor(this.currentDamage * 1.3);
+      this.currentRange = Math.floor(this.currentRange * 1.1);
+      this.currentCooldown = Math.max(100, Math.floor(this.currentCooldown * 0.9));
+
+      // Visual Feedback
+      this.setScale(1 + (this.level * 0.05)); // Grow slightly
+      
+      // Particle Burst
+      const mainScene = this.scene as MainScene;
+      mainScene.particleManager.playEffect('BUILD', this.x, this.y);
+      mainScene.audioManager.playSFX('sfx_build_place', { volume: 0.8, force: true });
+  }
+
+  public getStats() {
+      return {
+          name: this.config.name,
+          level: this.level,
+          damage: this.currentDamage,
+          range: this.currentRange,
+          cooldown: this.currentCooldown
+      };
   }
 
   destroy(fromScene?: boolean) {
