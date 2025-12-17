@@ -1,3 +1,4 @@
+
 import Phaser from 'phaser';
 import { MAP_SIZE, TILE_WIDTH, TILE_HEIGHT } from '../../constants';
 import { IsoUtils } from '../utils/IsoUtils';
@@ -42,16 +43,31 @@ export class GridManager {
   }
 
   /**
-   * Renders the static isometric floor grid.
+   * Renders the static isometric floor grid with a tactical checkerboard style.
    */
   private drawGrid() {
     this.gridGraphics.clear();
-    this.gridGraphics.lineStyle(1, 0x444444, 0.5); // Dark grey lines
+
+    const colorDark = 0x0f172a; // Slate 900
+    const colorLight = 0x1e293b; // Slate 800
+    const borderColor = 0x334155; // Slate 700
 
     for (let col = 0; col < MAP_SIZE; col++) {
       for (let row = 0; row < MAP_SIZE; row++) {
         const p = this.cartesianToIso(col, row);
-        this.drawIsoTile(this.gridGraphics, p.x, p.y);
+        
+        // Checkerboard Logic
+        const isEven = (col + row) % 2 === 0;
+        const fillColor = isEven ? colorLight : colorDark;
+        const alpha = isEven ? 0.8 : 0.6;
+
+        // Draw Filled Tile
+        this.gridGraphics.fillStyle(fillColor, alpha);
+        this.drawIsoTile(this.gridGraphics, p.x, p.y, true);
+
+        // Draw Subtle Border
+        this.gridGraphics.lineStyle(1, borderColor, 0.2);
+        this.drawIsoTile(this.gridGraphics, p.x, p.y, false);
       }
     }
   }
@@ -59,7 +75,7 @@ export class GridManager {
   /**
    * Helper to draw a single diamond shape at a given center point.
    */
-  private drawIsoTile(graphics: Phaser.GameObjects.Graphics, x: number, y: number) {
+  private drawIsoTile(graphics: Phaser.GameObjects.Graphics, x: number, y: number, fill: boolean) {
     const halfW = TILE_WIDTH / 2;
     const halfH = TILE_HEIGHT / 2;
 
@@ -70,7 +86,9 @@ export class GridManager {
     graphics.lineTo(x, y + halfH);      // Bottom
     graphics.lineTo(x - halfW, y);      // Left
     graphics.closePath();
-    graphics.strokePath();
+
+    if (fill) graphics.fillPath();
+    else graphics.strokePath();
   }
 
   /**
@@ -96,13 +114,37 @@ export class GridManager {
       // Get the screen position for the snapped grid cell
       const snapPos = this.cartesianToIso(gridPos.x, gridPos.y);
 
-      // Draw Cursor Highlight
-      this.cursorGraphics.lineStyle(2, 0xffffff, 1); // White highlight
-      this.drawIsoTile(this.cursorGraphics, snapPos.x, snapPos.y);
+      // Animation: Pulse Alpha
+      const alpha = 0.3 + 0.2 * Math.sin(this.scene.time.now / 150);
+
+      // Draw Holographic Cursor
+      this.cursorGraphics.lineStyle(2, 0x38bdf8, 0.8); // Cyan-400 Outline
+      this.cursorGraphics.fillStyle(0x38bdf8, alpha); // Cyan Fill
       
-      // Optional: Add a subtle fill for better visibility
-      this.cursorGraphics.fillStyle(0xffffff, 0.1);
-      this.cursorGraphics.fillPath();
+      this.drawIsoTile(this.cursorGraphics, snapPos.x, snapPos.y, true);
+      this.drawIsoTile(this.cursorGraphics, snapPos.x, snapPos.y, false);
+      
+      // Draw "Reticle" Corners rising up
+      const halfW = TILE_WIDTH / 2;
+      const halfH = TILE_HEIGHT / 2;
+      const rise = 15;
+
+      this.cursorGraphics.lineStyle(1, 0x38bdf8, 0.5);
+      this.cursorGraphics.beginPath();
+      
+      // Left corner vertical
+      this.cursorGraphics.moveTo(snapPos.x - halfW, snapPos.y);
+      this.cursorGraphics.lineTo(snapPos.x - halfW, snapPos.y - rise);
+      
+      // Right corner vertical
+      this.cursorGraphics.moveTo(snapPos.x + halfW, snapPos.y);
+      this.cursorGraphics.lineTo(snapPos.x + halfW, snapPos.y - rise);
+      
+      // Top corner vertical
+      this.cursorGraphics.moveTo(snapPos.x, snapPos.y - halfH);
+      this.cursorGraphics.lineTo(snapPos.x, snapPos.y - halfH - rise);
+      
+      this.cursorGraphics.strokePath();
     }
     
     return gridPos;

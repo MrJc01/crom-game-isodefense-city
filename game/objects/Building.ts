@@ -4,6 +4,7 @@ import Phaser from 'phaser';
 export class Building extends Phaser.GameObjects.Container {
   declare x: number;
   declare y: number;
+  declare active: boolean; // Explicitly declare active property
   declare scene: Phaser.Scene;
   declare add: (child: Phaser.GameObjects.GameObject | Phaser.GameObjects.GameObject[]) => this;
   declare setDepth: (value: number) => this;
@@ -11,35 +12,39 @@ export class Building extends Phaser.GameObjects.Container {
   declare setScale: (x: number, y?: number) => this;
 
   protected sprite: Phaser.GameObjects.Sprite;
+  
+  // Grid Position
+  public gridCol: number = 0;
+  public gridRow: number = 0;
+
+  // Stats
+  public maxHealth: number = 100;
+  public health: number = 100;
+  public isDestructible: boolean = true;
 
   constructor(scene: Phaser.Scene, x: number, y: number, textureKey: string = 'base_tile') {
     super(scene, x, y);
     
-    // Create the sprite
     this.sprite = scene.add.sprite(0, 0, textureKey);
-    
-    // CRITICAL: Set origin to Bottom-Center (0.5, 1)
-    // This ensures the "feet" of the building align with the center of the isometric tile.
     this.sprite.setOrigin(0.5, 1);
 
-    // Initial placeholder tint if texture is missing (fallback)
     if (this.sprite.width === 0) {
-        // If asset failed to load, draw a fallback rectangle via texture generation or just leave it
-        // For this blueprint, we assume assets load or placeholders exist.
+        // Fallback handled by subclass or ignored
     }
 
     this.add(this.sprite);
   }
 
+  public setGridPos(col: number, row: number) {
+      this.gridCol = col;
+      this.gridRow = row;
+  }
+
   public setVisuals(textureKey: string) {
     this.sprite.setTexture(textureKey);
-    // Reset origin just in case texture swap affects it (Phaser usually persists it, but good practice)
     this.sprite.setOrigin(0.5, 1);
   }
 
-  /**
-   * Applies a tint to the sprite (useful for damage feedback or selection)
-   */
   public setTint(color: number) {
     this.sprite.setTint(color);
   }
@@ -48,7 +53,28 @@ export class Building extends Phaser.GameObjects.Container {
     this.sprite.clearTint();
   }
 
+  public takeDamage(amount: number) {
+      if (!this.isDestructible) return;
+
+      this.health -= amount;
+      
+      // Damage Flash
+      this.sprite.setTint(0xff0000);
+      this.scene.time.delayedCall(100, () => {
+          if (this.scene) this.sprite.clearTint();
+      });
+
+      if (this.health <= 0) {
+          this.destroy();
+      }
+  }
+
+  /**
+   * Destroys the building and emits an event for the manager to clean up the grid.
+   */
   public destroy(fromScene?: boolean) {
+    // Notify manager before full destruction
+    this.scene.events.emit('building-destroyed', this);
     super.destroy(fromScene);
   }
 }

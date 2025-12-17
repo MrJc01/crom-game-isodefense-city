@@ -1,10 +1,11 @@
 
 import Phaser from 'phaser';
-import { PathfindingManager } from '../systems/PathfindingManager';
 import { IsoUtils } from '../utils/IsoUtils';
-import { GridPoint } from '../../types';
 import { MainScene } from '../scenes/MainScene';
 import { IStatusEffect } from '../types/StatusEffects';
+import { Building } from './Building';
+
+type EnemyState = 'MOVING' | 'ATTACKING';
 
 export class Enemy extends Phaser.GameObjects.Container {
   declare scene: MainScene; 
@@ -15,56 +16,67 @@ export class Enemy extends Phaser.GameObjects.Container {
   declare setDepth: (value: number) => this;
   declare setScale: (x: number, y?: number) => this;
 
-  private pathfindingManager: PathfindingManager;
-  private path: GridPoint[] = [];
-  private isMoving: boolean = false;
   private sprite: Phaser.GameObjects.Sprite;
   private healthBar: Phaser.GameObjects.Graphics;
   
-  // Movement Tween Reference
+  // Movement Tween
   private moveTween: Phaser.Tweens.Tween | null = null;
 
   // Status Effects
   private activeEffects: IStatusEffect[] = [];
   private speedModifier: number = 1.0;
   
-  public gridCol: number;
-  public gridRow: number;
-
+  // Stats
   public maxHp: number = 100;
   public hp: number = 100;
-  public moveSpeed: number = 300; 
+  public moveSpeed: number = 500; // Time per tile (lower is faster)
+  public attackDamage: number = 10;
+  public attackRate: number = 1000; // ms between attacks
   public isDead: boolean = false;
 
-  constructor(scene: Phaser.Scene, col: number, row: number, pathfindingManager: PathfindingManager) {
+  // AI State
+  public gridCol: number;
+  public gridRow: number;
+  private state: EnemyState = 'MOVING';
+  private targetBuilding: Building | null = null;
+  private attackTimer: Phaser.Time.TimerEvent | null = null;
+
+  // Reference to BuildingManager (Accessed via Scene hack to avoid breaking constructor signature)
+  private get buildingManager() {
+      // @ts-ignore - Accessing public property that exists on MainScene
+      return this.scene.buildingManager; 
+  }
+
+  constructor(scene: Phaser.Scene, col: number, row: number, unusedManager: any) {
     const startPos = IsoUtils.gridToScreen(col, row);
     super(scene, startPos.x, startPos.y);
     
-    this.pathfindingManager = pathfindingManager;
     this.gridCol = col;
     this.gridRow = row;
 
     // Sprite
     this.sprite = scene.add.sprite(0, 0, 'enemy_walker');
-    this.sprite.setOrigin(0.5, 1); // Feet at bottom center
-    // Fallback if asset missing: Draw circle if width is minimal
+    this.sprite.setOrigin(0.5, 1);
+    
+    // Fallback graphics
     if (this.sprite.width <= 1) {
-       // Just so we can see something if image fails
        this.sprite.setVisible(false);
        const g = scene.add.graphics();
        g.fillStyle(0xef4444);
        g.fillCircle(0, -16, 12);
        this.add(g);
     }
-
     this.add(this.sprite);
 
-    // Health Bar Container
+    // Health Bar
     this.healthBar = this.scene.add.graphics();
     this.add(this.healthBar);
     this.drawHealthBar();
     
     this.setDepth(startPos.y);
+    
+    // Start logic loop
+    this.scene.time.delayedCall(100, () => this.decideNextMove());
   }
 
   public setStats(hp: number, speedMsPerTile: number) {
@@ -74,18 +86,126 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.drawHealthBar();
   }
 
+  // --- SIEGE AI ---
+
+  public goTo(targetCol: number, targetRow: number) {
+      // Kept for compatibility, but Siege AI overrides pathfinding.
+      // We ignore the arguments and move to (10,10)
+      this.decideNextMove();
+  }
+
+  private decideNextMove() {
+      if (this.isDead) return;
+
+      const targetCol = 10;
+      const targetRow = 10;
+
+      // 1. Check if reached HQ (or neighbor of HQ)
+      if (this.gridCol === targetCol && this.gridRow === targetRow) {
+          this.startAttackingHQ();
+          return;
+      }
+
+      // 2. Calculate Next Tile (Simple direction)
+      const dx = targetCol - this.gridCol;
+      const dy = targetRow - this.gridRow;
+      
+      let nextCol = this.gridCol;
+      let nextRow = this.gridRow;
+
+      // Prefer moving along the axis with greater distance
+      if (Math.abs(dx) >= Math.abs(dy)) {
+          nextCol += Math.sign(dx);
+      } else {
+          nextRow += Math.sign(dy);
+      }
+
+      // 3. Check Collision
+      // Access BuildingManager via Scene
+      const building = this.buildingManager.getBuildingAt(nextCol, nextRow);
+
+      if (building) {
+          // BLOCKED -> Attack Building
+          this.targetBuilding = building;
+          this.state = 'ATTACKING';
+          this.startAttackingBuilding();
+      } else {
+          // EMPTY -> Move
+          this.state = 'MOVING';
+          this.moveStep(nextCol, nextRow);
+      }
+  }
+
+  private moveStep(col: number, row: number) {
+      this.gridCol = col;
+      this.gridRow = row;
+
+      const targetPos = IsoUtils.gridToScreen(col, row);
+
+      // Flip Sprite
+      this.sprite.setFlipX(targetPos.x < this.x);
+
+      this.moveTween = this.scene.tweens.add({
+          targets: this,
+          x: targetPos.x,
+          y: targetPos.y,
+          duration: this.moveSpeed,
+          onUpdate: () => {
+              if (!this.isDead) this.setDepth(this.y);
+          },
+          onComplete: () => {
+              if (!this.isDead) this.decideNextMove();
+          }
+      });
+      
+      this.moveTween.timeScale = this.speedModifier;
+  }
+
+  private startAttackingBuilding() {
+      if (!this.targetBuilding || !this.targetBuilding.active) {
+          this.decideNextMove();
+          return;
+      }
+
+      this.attackTimer = this.scene.time.addEvent({
+          delay: this.attackRate,
+          loop: true,
+          callback: () => {
+              if (this.targetBuilding && this.targetBuilding.active) {
+                  this.scene.particleManager.playEffect('HIT', this.targetBuilding.x, this.targetBuilding.y - 20);
+                  this.targetBuilding.takeDamage(this.attackDamage);
+              } else {
+                  // Building destroyed, resume moving
+                  if (this.attackTimer) this.attackTimer.remove();
+                  this.decideNextMove();
+              }
+          }
+      });
+  }
+
+  private startAttackingHQ() {
+      // We are AT the center. Attack the Colony integrity directly.
+      this.state = 'ATTACKING';
+      
+      this.attackTimer = this.scene.time.addEvent({
+          delay: 1000,
+          loop: true,
+          callback: () => {
+              this.scene.gameManager.loseLife();
+              this.scene.particleManager.playEffect('EXPLOSION', this.x, this.y);
+          }
+      });
+  }
+
+  // --- HEALTH & STATUS ---
+
   private drawHealthBar() {
     this.healthBar.clear();
-    
     const hpPercent = Math.max(0, this.hp / this.maxHp);
     const width = 24;
-    const yOffset = -this.sprite.height - 10; // Floating above head
-
-    // Background
+    const yOffset = -this.sprite.height - 10; 
     this.healthBar.fillStyle(0x000000, 1);
     this.healthBar.fillRect(-width/2, yOffset, width, 4);
-    
-    // Foreground
     const hpColor = hpPercent > 0.5 ? 0x22c55e : (hpPercent > 0.2 ? 0xfacc15 : 0xef4444);
     this.healthBar.fillStyle(hpColor, 1);
     this.healthBar.fillRect(-width/2, yOffset, width * hpPercent, 4);
@@ -93,42 +213,25 @@ export class Enemy extends Phaser.GameObjects.Container {
 
   public takeDamage(amount: number) {
     if (this.isDead) return;
-
     this.hp -= amount;
     this.drawHealthBar();
-
-    // Damage Flash (Only if not under status effect tint override)
-    // We mix tints or just flash red briefly
     const prevTint = this.sprite.tintTopLeft;
     this.sprite.setTint(0xff0000);
     this.scene.time.delayedCall(100, () => {
         if (!this.isDead) this.updateVisuals(); 
     });
-
-    if (this.hp <= 0) {
-      this.die();
-    }
+    if (this.hp <= 0) this.die();
   }
 
   public applyEffect(effect: IStatusEffect) {
     if (this.isDead) return;
-
-    // Check if effect of this type already exists
     const existing = this.activeEffects.find(e => e.type === effect.type);
-
     if (existing) {
-        // Refresh duration
         if (existing.timer) existing.timer.remove();
-        existing.timer = this.scene.time.delayedCall(effect.duration, () => {
-            this.removeEffect(effect.type);
-        });
-        // We do not stack values, we keep the existing one (or overwrite if we wanted stronger slows)
+        existing.timer = this.scene.time.delayedCall(effect.duration, () => this.removeEffect(effect.type));
     } else {
-        // Add new effect
         const newEffect = { ...effect };
-        newEffect.timer = this.scene.time.delayedCall(effect.duration, () => {
-            this.removeEffect(effect.type);
-        });
+        newEffect.timer = this.scene.time.delayedCall(effect.duration, () => this.removeEffect(effect.type));
         this.activeEffects.push(newEffect);
         this.recalculateStats();
     }
@@ -140,128 +243,42 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private recalculateStats() {
-    // Reset defaults
     this.speedModifier = 1.0;
-    
-    // Apply modifiers
     for (const effect of this.activeEffects) {
-        if (effect.type === 'SLOW') {
-            // Apply slow (multiply modifiers if we had multiple sources, but here strictly one type)
-            this.speedModifier *= effect.value; 
-        }
+        if (effect.type === 'SLOW') this.speedModifier *= effect.value; 
     }
-
-    // Update Tween TimeScale to reflect speed change immediately
     if (this.moveTween && this.moveTween.isPlaying()) {
         this.moveTween.timeScale = this.speedModifier;
     }
-
     this.updateVisuals();
   }
 
   private updateVisuals() {
-    // Priority: Red Flash (handled in takeDamage) > Blue (Slow) > Normal
     const isSlowed = this.activeEffects.some(e => e.type === 'SLOW');
-    
     this.sprite.clearTint();
-    if (isSlowed) {
-        this.sprite.setTint(0x3b82f6); // Blue tint for slow
-    }
+    if (isSlowed) this.sprite.setTint(0x3b82f6);
   }
 
   private die() {
     this.isDead = true;
-    this.isMoving = false;
-    
-    // Cleanup effects/timers
+    if (this.attackTimer) this.attackTimer.remove();
     this.activeEffects.forEach(e => e.timer?.remove());
-    this.activeEffects = [];
     if (this.moveTween) this.moveTween.stop();
 
     this.scene.removeEnemy(this);
-
-    if (this.scene.gameManager) {
-      this.scene.gameManager.earnGold(15);
-    }
+    this.scene.gameManager.earnGold(15);
 
     this.scene.tweens.add({
       targets: this,
       alpha: 0,
       scaleY: 0,
       duration: 200,
-      onComplete: () => {
-        this.destroy();
-      }
+      onComplete: () => this.destroy()
     });
-  }
-
-  public goTo(targetCol: number, targetRow: number) {
-    if (this.isMoving || this.isDead) return;
-
-    const start = { col: this.gridCol, row: this.gridRow };
-    const end = { col: targetCol, row: targetRow };
-
-    this.path = this.pathfindingManager.findPath(start, end);
-
-    if (this.path.length === 0) return;
-
-    this.path.shift(); 
-    this.isMoving = true;
-    this.moveNextStep();
-  }
-
-  private moveNextStep() {
-    if (this.isDead) return;
-
-    if (this.path.length === 0) {
-      this.isMoving = false;
-      this.reachGoal();
-      return;
-    }
-
-    const nextNode = this.path.shift()!;
-    const targetScreen = IsoUtils.gridToScreen(nextNode.col, nextNode.row);
-
-    this.gridCol = nextNode.col;
-    this.gridRow = nextNode.row;
-
-    // Flip sprite based on direction
-    if (targetScreen.x < this.x) {
-        this.sprite.setFlipX(true);
-    } else {
-        this.sprite.setFlipX(false);
-    }
-
-    this.moveTween = this.scene.tweens.add({
-      targets: this,
-      x: targetScreen.x,
-      y: targetScreen.y,
-      duration: this.moveSpeed, // This is the base duration
-      ease: 'Linear',
-      onUpdate: () => {
-        if (!this.isDead) this.setDepth(this.y);
-      },
-      onComplete: () => {
-        if (!this.isDead) this.moveNextStep();
-      }
-    });
-    
-    // Apply current speed modifier to the new tween immediately
-    this.moveTween.timeScale = this.speedModifier;
-  }
-
-  private reachGoal() {
-    if (this.scene.gameManager) {
-      this.scene.gameManager.loseLife();
-    }
-    // Cleanup before destroying
-    this.activeEffects.forEach(e => e.timer?.remove());
-    this.isDead = true; 
-    this.scene.removeEnemy(this);
-    this.destroy();
   }
 
   destroy(fromScene?: boolean) {
+    if (this.attackTimer) this.attackTimer.remove();
     this.activeEffects.forEach(e => e.timer?.remove());
     if (this.moveTween) this.moveTween.stop();
     super.destroy(fromScene);

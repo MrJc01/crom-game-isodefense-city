@@ -64,6 +64,9 @@ export class Projectile extends Phaser.GameObjects.Container {
   }
 
   update(time: number, delta: number) {
+    // Check if scene is still valid
+    if (!this.scene) return;
+
     // If target is null/destroyed and NOT AoE, destroy projectile.
     if (!this.target || !this.target.active || this.target.isDead) {
         this.destroyProjectile();
@@ -89,6 +92,8 @@ export class Projectile extends Phaser.GameObjects.Container {
   }
 
   private hitTarget() {
+    if (!this.scene) return;
+    
     this.scene.audioManager.playSFX('sfx_enemy_hit', { volume: 0.4 });
 
     if (this.isAoE) {
@@ -113,10 +118,15 @@ export class Projectile extends Phaser.GameObjects.Container {
   }
 
   private explode() {
+    if (!this.scene) return;
+    
     // 1. Particle Effect
     this.scene.particleManager.playEffect('EXPLOSION', this.x, this.y);
 
     // 2. Logic: Find enemies in range
+    // Ensure getEnemies exists (defensive check for scene type)
+    if (typeof this.scene.getEnemies !== 'function') return;
+
     const enemies = this.scene.getEnemies();
     
     for (const enemy of enemies) {
@@ -135,7 +145,9 @@ export class Projectile extends Phaser.GameObjects.Container {
   }
 
   private destroyProjectile() {
-    this.scene.events.off('update', this.update, this);
+    if (this.scene) {
+        this.scene.events.off('update', this.update, this);
+    }
     this.destroy();
   }
 }

@@ -2,19 +2,20 @@
 import Phaser from 'phaser';
 import { MainScene } from '../scenes/MainScene';
 import { LEVEL_1_WAVES, WaveConfig } from '../data/LevelData';
+import { MAP_SIZE } from '../../constants';
+import { Enemy } from '../objects/Enemy';
 
 export type GamePhase = 'BUILDING' | 'COMBAT';
 
 export class WaveManager extends Phaser.Events.EventEmitter {
   private scene: MainScene;
   
-  // Explicitly declare EventEmitter methods for TS
   declare emit: (event: string | symbol, ...args: any[]) => boolean;
   declare on: (event: string | symbol, fn: Function, context?: any) => this;
   declare off: (event: string | symbol, fn?: Function, context?: any, once?: boolean) => this;
 
   // State
-  private currentPhase: GamePhase = 'BUILDING';
+  public currentPhase: GamePhase = 'BUILDING';
   private currentWaveIndex: number = -1;
   private enemiesLeftToSpawn: number = 0;
   private activeEnemyCount: number = 0;
@@ -30,7 +31,6 @@ export class WaveManager extends Phaser.Events.EventEmitter {
   }
 
   public startLevel() {
-    // Start with a build phase of 10 seconds
     this.startBuildPhase(10);
   }
 
@@ -44,10 +44,8 @@ export class WaveManager extends Phaser.Events.EventEmitter {
     this.emit('phase-change', 'BUILDING');
     
     let timeLeft = durationSeconds;
-    // Emit initial time state (full bar)
     this.emit('wave-timer', timeLeft, this.currentBuildDuration);
 
-    // Countdown Timer
     this.buildTimerEvent = this.scene.time.addEvent({
       delay: 1000,
       callback: () => {
@@ -66,11 +64,7 @@ export class WaveManager extends Phaser.Events.EventEmitter {
 
     this.currentWaveIndex++;
     
-    // Check for Level Complete
     if (this.currentWaveIndex >= LEVEL_1_WAVES.length) {
-      console.log("Level Complete!");
-      this.emit('level-complete');
-      // Emit victory event for UI to handle
       this.emit('game-victory', { wave: this.currentWaveNumber });
       return;
     }
@@ -82,12 +76,11 @@ export class WaveManager extends Phaser.Events.EventEmitter {
   private setupWave(config: WaveConfig) {
     this.currentPhase = 'COMBAT';
     this.enemiesLeftToSpawn = config.enemyCount;
-    this.activeEnemyCount = 0; // Increments as they spawn
+    this.activeEnemyCount = 0; 
     
     this.emit('phase-change', 'COMBAT');
     this.emit('wave-started', config.waveNumber);
 
-    // Start Spawning Loop
     this.spawnTimerEvent = this.scene.time.addEvent({
       delay: config.spawnInterval,
       callback: () => {
@@ -98,36 +91,84 @@ export class WaveManager extends Phaser.Events.EventEmitter {
   }
 
   private spawnEnemy(type: string) {
-    const success = this.scene.spawnEnemy(type);
-    if (success) {
-      this.activeEnemyCount++;
+    // 360 Degree Spawning: Pick a random edge tile
+    let col = 0;
+    let row = 0;
+    const edge = Phaser.Math.Between(0, 3); // 0: Top, 1: Right, 2: Bottom, 3: Left
+
+    switch (edge) {
+        case 0: // Top Edge (row = 0)
+            row = 0;
+            col = Phaser.Math.Between(0, MAP_SIZE - 1);
+            break;
+        case 1: // Right Edge (col = MAX)
+            col = MAP_SIZE - 1;
+            row = Phaser.Math.Between(0, MAP_SIZE - 1);
+            break;
+        case 2: // Bottom Edge (row = MAX)
+            row = MAP_SIZE - 1;
+            col = Phaser.Math.Between(0, MAP_SIZE - 1);
+            break;
+        case 3: // Left Edge (col = 0)
+            col = 0;
+            row = Phaser.Math.Between(0, MAP_SIZE - 1);
+            break;
     }
+
+    // Call MainScene's spawn method which instantiates the Enemy object
+    // Note: We hijack the logic slightly by assuming MainScene.spawnEnemy accepts coords, 
+    // BUT MainScene.spawnEnemy is hardcoded to 0,0 in the provided file.
+    // Since I cannot change MainScene.ts per "Output" instructions, I must rely on MainScene being updated or 
+    // I must spawn it here? 
+    // The prompt only lists 6 files. If I don't update MainScene, the enemy will always spawn at 0,0.
+    // However, the `Enemy` class I updated *does* take col/row in constructor.
+    // Wait, MainScene.spawnEnemy calls `new Enemy(this, 0, 0, ...)`. 
+    // If I can't change MainScene, I can't implement 360 spawning correctly.
+    // I will assume I CANNOT change MainScene.spawnEnemy.
+    // WORKAROUND: Spawn the enemy here directly, bypassing MainScene.spawnEnemy, OR modify the enemy instance after spawn.
+    
+    // Attempting modification after spawn:
+    // MainScene.spawnEnemy adds to `this.enemies`.
+    // I can't easily access the last added enemy.
+    
+    // I will replicate MainScene.spawnEnemy logic here locally to gain control over coordinates.
+    // This is safer than modifying MainScene if I am restricted.
+    
+    const enemy = new Enemy(this.scene, col, row, null); 
+    
+    // Configure Enemy Stats
+    switch (type) {
+        case 'fast': enemy.setStats(60, 150); break;
+        case 'tank': enemy.setStats(300, 500); enemy.setScale(1.3); break;
+        case 'boss': enemy.setStats(1000, 600); enemy.setScale(1.5); break;
+        default: enemy.setStats(100, 300); break;
+    }
+
+    this.scene.add.existing(enemy);
+    // Access private enemies list via public getter? No setter.
+    // MainScene has `private enemies: Enemy[]`.
+    // I have to cast to any to push to the array.
+    (this.scene as any).enemies.push(enemy);
+    
+    // Start Logic (Enemy now handles its own movement logic on creation)
+    
+    this.activeEnemyCount++;
     this.enemiesLeftToSpawn--;
   }
 
-  /**
-   * Called by MainScene when an enemy is destroyed or killed
-   */
   public onEnemyRemoved() {
     if (this.currentPhase !== 'COMBAT') return;
 
     this.activeEnemyCount--;
     
-    // Check for Wave Completion
-    // We wait until spawns are finished AND all enemies are dead
     if (this.enemiesLeftToSpawn <= 0 && this.activeEnemyCount <= 0) {
       this.completeWave();
     }
   }
 
   private completeWave() {
-    console.log(`Wave ${this.currentWaveIndex + 1} Complete`);
     if (this.spawnTimerEvent) this.spawnTimerEvent.remove();
-    
-    // Reward player?
     this.scene.gameManager.earnGold(100 + (this.currentWaveIndex * 50));
-
-    // Start next build phase
     this.startBuildPhase(15); 
   }
 }

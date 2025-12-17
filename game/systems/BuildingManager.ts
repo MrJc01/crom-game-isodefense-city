@@ -13,9 +13,10 @@ export class BuildingManager {
   private scene: MainScene;
   private gridManager: GridManager;
   private gridState: (Building | null)[][];
+  private buildings: Building[] = []; // List of all active buildings
 
   // State
-  private selectedKey: string = 'ARCHER'; // Default
+  private selectedKey: string = 'ARCHER'; 
   private isWallMode: boolean = false;
   private selectedTower: Tower | null = null;
   
@@ -28,20 +29,55 @@ export class BuildingManager {
     this.gridManager = gridManager;
     this.gridState = Array(MAP_SIZE).fill(null).map(() => Array(MAP_SIZE).fill(null));
 
-    // Ghost Building Preview
+    // Initialize GameManager integration
+    this.scene.gameManager.init(this.scene, this);
+
+    // Ghost
     this.ghost = this.scene.add.sprite(0, 0, 'tower_lvl1');
     this.ghost.setOrigin(0.5, 1);
     this.ghost.setAlpha(0.6);
     this.ghost.setDepth(999999);
     this.ghost.setVisible(false);
 
-    // Range Indicator (Selection)
+    // Range
     this.rangeGraphics = this.scene.add.graphics();
-    this.rangeGraphics.setDepth(999998); // Just below ghost
+    this.rangeGraphics.setDepth(999998);
+
+    // Setup Event Listeners
+    this.scene.events.on('building-destroyed', this.onBuildingDestroyed, this);
+
+    // Spawn HQ
+    this.initializeHQ();
+  }
+
+  private initializeHQ() {
+      // Spawn HQ at Center (10, 10)
+      const cx = 10;
+      const cy = 10;
+      
+      // Force place even if "cost" check fails (it's free/initial)
+      const pos = this.gridManager.cartesianToIso(cx, cy);
+      const hq = new Tower(this.scene, pos.x, pos.y, 'HQ');
+      
+      this.scene.add.existing(hq);
+      (hq as any).setDepth(pos.y);
+      hq.setGridPos(cx, cy);
+
+      this.gridState[cx][cy] = hq;
+      this.buildings.push(hq);
+  }
+
+  public getBuildingAt(col: number, row: number): Building | null {
+      if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) return null;
+      return this.gridState[col][row];
+  }
+
+  public getAllBuildings(): Building[] {
+      return this.buildings;
   }
 
   public setBuildingType(key: string) {
-    this.deselectTower(); // Clear selection when switching build modes
+    this.deselectTower();
     this.selectedKey = key;
     this.isWallMode = (key === 'WALL');
     
@@ -49,7 +85,6 @@ export class BuildingManager {
     this.ghost.setTexture(texture);
     this.ghost.setOrigin(0.5, 1);
 
-    // Apply tint to ghost to match tower type
     if (!this.isWallMode && TOWER_TYPES[key]) {
         this.ghost.setTint(TOWER_TYPES[key].tint);
     } else {
@@ -58,19 +93,21 @@ export class BuildingManager {
   }
 
   public update(gridPos: Phaser.Math.Vector2) {
-    // If we have a selected tower, draw its range and HIDE the ghost
     if (this.selectedTower) {
         this.ghost.setVisible(false);
         this.drawRangeCircle();
         return;
     }
+    
+    // Check Phase
+    if (this.scene.waveManager.currentPhase === 'COMBAT') {
+        this.ghost.setVisible(false);
+        this.rangeGraphics.clear();
+        return;
+    }
 
-    // Otherwise, Build Mode Logic
     this.rangeGraphics.clear();
-
-    const isValidBounds = 
-        gridPos.x >= 0 && gridPos.x < MAP_SIZE && 
-        gridPos.y >= 0 && gridPos.y < MAP_SIZE;
+    const isValidBounds = gridPos.x >= 0 && gridPos.x < MAP_SIZE && gridPos.y >= 0 && gridPos.y < MAP_SIZE;
 
     if (!isValidBounds) {
         this.ghost.setVisible(false);
@@ -78,13 +115,10 @@ export class BuildingManager {
     }
 
     this.ghost.setVisible(true);
-
-    // Move Ghost
     const screenPos = IsoUtils.gridToScreen(gridPos.x, gridPos.y);
     this.ghost.setPosition(screenPos.x, screenPos.y);
     this.ghost.setDepth(screenPos.y + 1); 
 
-    // Validate Placement
     const isOccupied = this.isCellOccupied(gridPos.x, gridPos.y);
     const cost = this.getCost(this.selectedKey);
     const canAfford = this.scene.gameManager.canAfford(cost);
@@ -96,27 +130,22 @@ export class BuildingManager {
             this.ghost.setTint(TOWER_TYPES[this.selectedKey].tint);
         } else {
             this.ghost.clearTint();
-            this.ghost.setTint(0x4ade80); // Greenish for walls
+            this.ghost.setTint(0x4ade80);
         }
     }
   }
 
   private drawRangeCircle() {
       if (!this.selectedTower) return;
-      
       this.rangeGraphics.clear();
       this.rangeGraphics.lineStyle(2, 0xffffff, 0.5);
       this.rangeGraphics.fillStyle(0xffffff, 0.1);
-      
-      // Draw perfect circle for range (since game logic uses 2D distance)
       this.rangeGraphics.fillCircle(this.selectedTower.x, this.selectedTower.y, this.selectedTower.currentRange);
       this.rangeGraphics.strokeCircle(this.selectedTower.x, this.selectedTower.y, this.selectedTower.currentRange);
   }
 
-  // --- SELECTION LOGIC ---
-
   public handleInteractAt(col: number, row: number) {
-      // FIX: Strictly check bounds before accessing gridState to prevent undefined errors
+      // Bounds check
       if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) {
           this.deselectTower();
           return;
@@ -127,11 +156,9 @@ export class BuildingManager {
           if (building instanceof Tower) {
               this.selectTower(building);
           } else {
-              // Clicked a wall or other building
               this.deselectTower();
           }
       } else {
-          // Empty tile: Check if we have a selection to deselect, OR place building
           if (this.selectedTower) {
               this.deselectTower();
           } else {
@@ -155,31 +182,34 @@ export class BuildingManager {
 
   public sellSelectedTower() {
       if (!this.selectedTower) return;
-
+      
       const refund = this.selectedTower.getSellValue();
-      // Reverse lookup for now since we didn't store grid coords on the object (Optimization TODO)
-      const gridPos = this.findBuildingGridPos(this.selectedTower);
+      const col = this.selectedTower.gridCol;
+      const row = this.selectedTower.gridRow;
 
-      if (gridPos) {
-          this.gridState[gridPos.x][gridPos.y] = null;
-      }
+      this.gridState[col][row] = null;
+      this.buildings = this.buildings.filter(b => b !== this.selectedTower);
 
       this.scene.gameManager.earnGold(refund);
-      this.scene.particleManager.playEffect('BUILD', this.selectedTower.x, this.selectedTower.y); // Poof
+      this.scene.particleManager.playEffect('BUILD', this.selectedTower.x, this.selectedTower.y);
       this.selectedTower.destroy();
       this.deselectTower();
   }
 
-  private findBuildingGridPos(building: Building): {x: number, y: number} | null {
-      for(let x=0; x<MAP_SIZE; x++) {
-          for(let y=0; y<MAP_SIZE; y++) {
-              if (this.gridState[x][y] === building) return {x, y};
-          }
+  private onBuildingDestroyed(building: Building) {
+      const col = building.gridCol;
+      const row = building.gridRow;
+      
+      if (this.gridState[col][row] === building) {
+          this.gridState[col][row] = null;
       }
-      return null;
+      this.buildings = this.buildings.filter(b => b !== building);
+      
+      // If it was selected, deselect
+      if (this.selectedTower === building) {
+          this.deselectTower();
+      }
   }
-
-  // --- BUILDING LOGIC ---
 
   private getCost(key: string): number {
     if (key === 'WALL') return 20;
@@ -187,13 +217,12 @@ export class BuildingManager {
   }
 
   public isCellOccupied(col: number, row: number): boolean {
-    if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) {
-      return true;
-    }
+    if (col < 0 || col >= MAP_SIZE || row < 0 || row >= MAP_SIZE) return true;
     return this.gridState[col][row] !== null;
   }
 
   public placeBuilding(col: number, row: number): boolean {
+    if (this.scene.waveManager.currentPhase === 'COMBAT') return false;
     if (this.isCellOccupied(col, row)) return false;
 
     const cost = this.getCost(this.selectedKey);
@@ -204,21 +233,23 @@ export class BuildingManager {
     let building: Building;
     if (this.isWallMode) {
       building = new Wall(this.scene, pos.x, pos.y);
+      // Walls need health config? Default is 100
+      building.maxHealth = 500;
+      building.health = 500;
     } else {
       building = new Tower(this.scene, pos.x, pos.y, this.selectedKey);
     }
     
+    building.setGridPos(col, row);
     this.scene.add.existing(building);
     (building as any).setDepth(pos.y);
 
     this.gridState[col][row] = building;
+    this.buildings.push(building);
     this.scene.gameManager.spendGold(cost);
     
     this.scene.audioManager.playSFX('sfx_build_place', { volume: 0.8 });
-    
-    if (this.scene.particleManager) {
-        this.scene.particleManager.playEffect('BUILD', pos.x, pos.y);
-    }
+    this.scene.particleManager.playEffect('BUILD', pos.x, pos.y);
     
     return true;
   }

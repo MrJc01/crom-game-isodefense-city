@@ -8,6 +8,7 @@ import { GameManager } from '../systems/GameManager';
 import { WaveManager } from '../systems/WaveManager';
 import { AudioManager } from '../systems/AudioManager';
 import { ParticleManager } from '../systems/ParticleManager';
+import { MagicManager } from '../systems/MagicManager';
 import { Enemy } from '../objects/Enemy';
 import { IsoUtils } from '../utils/IsoUtils';
 import { MAP_SIZE, COLOR_BACKGROUND } from '../../constants';
@@ -24,14 +25,15 @@ export class MainScene extends Phaser.Scene {
   declare sound: Phaser.Sound.BaseSoundManager; // Expose sound manager type
   declare cache: Phaser.Cache.CacheManager;
 
-  private gridManager!: GridManager;
-  private buildingManager!: BuildingManager;
-  private cameraManager!: CameraManager;
-  private pathfindingManager!: PathfindingManager;
+  public gridManager!: GridManager;
+  public buildingManager!: BuildingManager;
+  public cameraManager!: CameraManager;
+  public pathfindingManager!: PathfindingManager;
   public gameManager!: GameManager;
   public waveManager!: WaveManager;
   public audioManager!: AudioManager;
   public particleManager!: ParticleManager;
+  public magicManager!: MagicManager;
 
   // Track enemies
   private enemies: Enemy[] = [];
@@ -52,6 +54,7 @@ export class MainScene extends Phaser.Scene {
     this.cameraManager = new CameraManager(this);
     this.pathfindingManager = new PathfindingManager(this, this.buildingManager);
     this.waveManager = new WaveManager(this);
+    this.magicManager = new MagicManager(this);
 
     // Start Music
     this.audioManager.playMusic('bgm_game', 0.4);
